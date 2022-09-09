@@ -119,6 +119,13 @@ class DataStats(object):
         s = s + "variance: " + str(self.variance)+"\n"
         return s
 
+    def get_top_item(self):
+        """
+        returns the most frequent item in self.items
+        this will be the first item in the distribution, as it 
+        is sorted from most frequent to least
+        """
+        return self.distribution[0][0]
 
     def get_distribution(self, lst):
         """ 
@@ -142,28 +149,47 @@ class DataStats(object):
         # print("frequencies are", ret)
         return ret
 
+    def every_nth_item(self, start=0, n=1):
+        """ n is an integer 
+            returns a list of every nth item in self.items
+            from specified start index of list
+            (eg start=0, n=2 will return elemenst at pos 0, pos2, pos 4..)
+                start=3, n=2 will return elements at pos 3, 5, 7, 9...)
+            if n is < 1  or > numitems returns an empty list
+        """
+        numitems = self.numitems
+        if n > numitems or n < 1:   ## eg in 10-character long list you can at most   
+                                            ## retrieve every 10th character
+            return []
+        else:
+            return [self.items[i] for i in range(start, numitems, n )]
+            ## eg with start=0 and n=2 the first item is at index 0 and the 
+            ##     next item at index 2...
+            ##   with start = 2 and n=2 the first item is at index 2 and the next at
+            ##    index 4...
 
-class HexDataSet(object): 
+
+class HexDataSet(DataStats): 
     def __init__(self, hexstring):
         """ 
             hexstring is a string representation 
             of hex-encrypted characters
             eg "F96DE8C2"
-            items is a list of the items that make up the dataset
         """
         self.hexstring = hexstring
-        self.items = self.prep_ciphertext(self.hexstring)
-        self.stats = DataStats(self.items)
+        items = self.prep_ciphertext(self.hexstring) #turn into a list
+        super().__init__(items)
+
+
 
     def __str__(self):
         s = "hexstring:"+self.hexstring+"\n"
-        s = s+"items=\n"+str(self.items)+"\n"
-        s = s + str(self.stats) +"\n"
+        s = s + super().__str__() +"\n"
 
         return s
 
     def prep_ciphertext(self, ciphertext):
-        """ciphertext is a string representation of hex-encrypted characters
+        """ciphertext is a string representation of hex-encrypted characters'
         eg "F96DE8C2"
         returns a list of pairs of characters, so that each item is the 
         string representation of a hex byte
@@ -176,17 +202,7 @@ class HexDataSet(object):
 
         return bytes
 
-    def every_nth_item(self, n):
-        """ n is an integer 
-            returns a list of every nth item in self.items
-            if n is < 1  or > numitems returns an empty list
-        """
-        numitems = self.stats.numitems
-        if n > numitems or n < 1:   ## eg in 10-character long list you can at most   
-                                            ## retrieve every 10th character
-            return []
-        else:
-            return [self.items[i] for i in range(n-1, numitems, n )]
+
 
 
 ## ENGLISH LETTER FREQUENCY VALUES FOR REFERENCE
@@ -223,17 +239,54 @@ def find_key_length(ciphertext=CIPH, max_key_len=13):
     ## and compute stats for the sublist
     stats = []
     for n in range(1, max_key_len+1):
-        nth_hx = hx.every_nth_item(n) #list of every nth item
+        nth_hx = hx.every_nth_item(0,n) #list of every nth item
 
-        nth_stats = DataStats(nth_hx)  #stats for the list
-        stats.append(nth_stats)
- 
-    # print("keys in dictionary", frequencies.keys())
-    # for key in frequencies.keys():
-    #     print(frequencies[key])
-    for stat in stats:
-        print(stat.variance)
+        nth_stats = DataStats(nth_hx)
+        stats.append(nth_stats.variance)
+
+    ## the key length will correspond to the highest variance
+    maxvar = max(stats)
+    keylen = stats.index(maxvar)+1  #variance for keylen1 is 0th element in list, etc.
+    print("the keylength is", keylen)  #key length = 7 for CIPH
+
     return stats
+
+def find_key(ciphertext=CIPH, keylen=7):
+    """
+    keylen is an int, the length in bytes of the hex key
+    used to encode a message
+    ciphertext is a string representation of the hex-encoded message
+    """
+
+    hx = HexDataSet(ciphertext)  #hex data set of entire ciphertext
+
+    keylst = []       ## eg for keylen=7, key will be list of 7 ints 
+                      ## the keyval at position 0 was used to encode
+                      ## ciphertext elements 0, 7, 14, ...
+                      ## the keyval at posiiton 1 was used to encode
+                      ## ciphertext elements 1, 8, 15, ... etc.
+    for pos in range(keylen):
+        #extract every nth item starting from this pos
+        nth_list = hx.every_nth_item(pos, keylen)
+        #generate a stats object for this list
+        nth_stats = DataStats(nth_list)
+        #get the most frequent item, we will assume this encodes space character
+        # which has integer value 32
+        topitem = nth_stats.get_top_item()
+
+        # topitem is returned as a string representation of a hex byte
+        # eg "3F" , but we now change it into an actual int value
+        # of an encrypted character
+        cipherval = int(topitem, 16)
+
+        # encryptedtext XOR plaintext = key
+
+        k = cipherval ^ ord(' ')
+        keylst.append(k)
+    print(keylst)
+    return keylst
+
+
 
 
 
