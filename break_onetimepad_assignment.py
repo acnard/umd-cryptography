@@ -38,7 +38,7 @@ def hexstring_to_vals(hexstring):
 ## these were all encrypted with the same key of length 31, so that:
 ## the byte at pos i of each ciph was XOREd with the same keybyte, 
 ## 
-ciphs= ["BB3A65F6F0034FA957F6A767699CE7FABA855AFB4F2B520AEAD612944A801E",
+hexciphs= ["BB3A65F6F0034FA957F6A767699CE7FABA855AFB4F2B520AEAD612944A801E",
         "BA7F24F2A35357A05CB8A16762C5A6AAAC924AE6447F0608A3D11388569A1E",
         "A67261BBB30651BA5CF6BA297ED0E7B4E9894AA95E300247F0C0028F409A1E",
         "A57261F5F0004BA74CF4AA2979D9A6B7AC854DA95E305203EC8515954C9D0F",
@@ -46,7 +46,25 @@ ciphs= ["BB3A65F6F0034FA957F6A767699CE7FABA855AFB4F2B520AEAD612944A801E",
         "A6726DE8F01A50E849EDBC6C7C9CF2B2A88E19FD423E0647ECCB04DD4C9D1E",
         "BC7570BBBF1D46E85AF9AA6C7A9CEFA9E9825CFD5E3A0047F7CD009305A71E"]
 
-ciphvals = [hexstring_to_vals(ciphs[i]) for i in range(len(ciphs))]
+## convert each hexciph string to a list of ints
+ciphs = [hexstring_to_vals(hexciphs[i]) for i in range(len(hexciphs))]
+BYTES = 31  ## number of bytes in each ciphertext, and in the key
+
+def vals_at_pos(i, intlists):
+    """
+    intlists is a list of equal-length lists of ints
+    i is an int representing an index position in an intlist
+    returns a list of ints, the ith value from each list
+    """
+    n = len(intlists[0])   ## number of values in each intlist
+    assert i > 0 and i < n
+
+    result = []
+    for intlist in intlists:
+        result.append(intlist[i])
+    
+    return result
+
 
 
 def xor_vals(vals1, vals2):
@@ -67,8 +85,8 @@ def is_letterspace_pair(cval1, cval2):
     Ascii letters start with binary    01
     Asci space char starts with binary 00
 
-    therefore XOR of two letters (or two spaces) starts with 00
-              XOR of a letter and space starts with 01
+    therefore XOR of two letters (or two spaces) starts with binary 00
+              XOR of a letter and space starts with binary 01
 
 
     returns True if the two cvals are a letter and a space
@@ -85,11 +103,62 @@ def is_letterspace_pair(cval1, cval2):
         return True
     else:
         return False
+def extract_keybyte(cvals):
+    """
+    cvals is a list of ints (in range 0->255) representing byte values
+    known to have been encrypted with the same key
+
+    if one of the cvals is an encryption of a space character, then it is
+    possible to extract the key (see comments in code)
+
+    returns the value of the keybyte if it could be extracted, otherwise
+    None
+    """
+
+    ## remove duplicates
+    cvals = list(set(cvals))
+    
+    ## need at least three distinct values
+    if len(cvals)<3:
+        return None
+
+    ## compare first value v0 pairwise against all the others
+    ## note that without duplicates we have all distinct letters
+    ## plus possibly one space character
+
+    v0 = cvals[0]
+    othervals = cvals[1:]
+    letterspace_pairs = []
+    for vi in othervals:
+        if is_letterspace_pair(v0, vi):
+            letterspace_pairs.append(vi)
+    
+    ## now check how many letterspace pairs found
+    ## we only compared v0 against all the other values
+    ## so if v0 is the space, all will be letterspace pairs
+    ## if some other value vi is the space, we will find only one pair (v0,vi)
+    ## and if there are no spaces, will find no pairs
+
+    num = len(letterspace_pairs)
+    
+    if num == 0:     ## cannot extract key if no spaces 
+        return None   
+    elif num == 1:
+        space = letterspace_pairs[0] ## vi is the space, it made pair with v0
+    elif num == len(othervals):
+        space = v0   ## v0 is the space, it made a pair with all others
+    else:
+        print("unexpected letterspace_pairs count")
+        return None
+
+    ## space is the encrypted value = ord(' ') XOR key
+    ## if we XOR it with ord(' ') again we recover the key
+    ## (n^n = 0 and k^0 = k)
+    keybyte = space ^ ord(' ')
+
 
 def test():
-    ## get cvals xored with same byte
-
-    cvals = [ ciphvals[i][0] for i in range(len(ciphvals))]
+    
 
 ### old
 from random import randint
