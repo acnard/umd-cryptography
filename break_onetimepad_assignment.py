@@ -13,7 +13,13 @@
 # 
 #  
 
-### helper functions
+from itertools import combinations
+import re
+from webbrowser import get
+
+########################
+###  helper functions ##
+########################
 def hexstring_to_vals(hexstring):
     """ 
     hexstring is a string representation of hex bytes
@@ -33,6 +39,284 @@ def hexstring_to_vals(hexstring):
     ## vals = [int(hexstring[i:i+2], 16)] for i in range(0, len(hexstring)-1, 2)
 
     return vals
+
+def vals_to_hexstring(vals):
+    """
+    vals is a list ints, corresponding to byte values, in range 0->255
+    returns a string, the hexadecimal representation of those bytes
+    """
+    s = ""
+    for val in vals:
+        assert val >=0 and val <=255   # must represent a byte
+        hexval = hex(val)[2:]  #strip out leading '0x'
+        if len(hexval)==1:
+            hexval = '0'+ hexval  #and add leading zero if needed
+        s = s + hexval
+
+    return s
+
+
+def string_to_vals(s):
+    """
+    s is a string of text
+
+    returns a list of ints, the ascii value of each character in s
+    """
+    vals = [ord(c) for c in s]
+    return vals
+
+def are_printable_asciivals(vals):
+    """
+    vals is a list of ints
+    returns True if every value in vals is in the range  32 =< val <127
+    ie if they all represent printable characters
+    (nb 127 is DEL so we exclude it)
+    otherwise False
+    """
+    for val in vals:
+        if val >= 127 or val < 32:
+            return False
+    return True
+
+def vals_to_string(vals):
+    """
+    vals is a list of ints, representing printable ascii characters
+    returns the corresponding string  
+    """
+    s = ""
+    assert are_printable_asciivals(vals)
+    for val in vals:
+        s = s + chr(val)
+
+    return s
+
+def extract_pairs(items):
+    """ items is a list
+        returns a list of tuples, all the possible pairs of items
+        from the string, without repetition (order does not matter) 
+        eg "ddefge"  -> the pairs are de, df, dg, ef, eg, fg
+    """
+
+   ## remove duplicates to get unique items
+    u_items = list(set(items))
+    pairs = list(combinations(u_items, 2))
+
+    return pairs
+
+def get_addends(tot):
+    """
+    tot is an int
+    returns a list of tuples, all pairs of nonzero values s1, s2 such that s1+s2=tot
+    order doesn't matter
+    eg for tot = 10 returns [(1,9), (2,8), (3,7), (4,6), (5,5)]
+
+    """
+    sums = []
+    for s1 in range(1,1+tot//2):
+        sums.append( (s1, tot-s1) )
+    return sums
+
+def test_helpers(s):
+    """s is a string, to use for running the test 
+    """
+    #get hexstring representation of the string
+    hx = vals_to_hexstring( string_to_vals(s) )
+    print("hex=", hx)
+
+    # now try to get original string back
+     
+    st = vals_to_string( hexstring_to_vals(hx) )
+
+    print("return string=", st)
+
+    if s != st:
+        print("no match")
+
+    # do the combinations
+    chars = list(s)
+    print(extract_pairs(chars))
+
+########################
+###  end helpers #######
+########################
+
+def is_letter_and_nonletter(cval1, cval2):
+    """
+    cval1 and cval2 are two plaintext values or, alternatively, 
+    two ciphertext byte values encrypted with the same key. 
+    
+    NB this is equivalent because, if the same key was used,
+    the XOR of the cvals = the XOR of pvals. Proof:
+
+    Given cval1=(key XOR pval1) and (cval2= key XOR pval2)
+
+    cval1 XOR cval2 = (key XOR pval1) XOR (key XOR pval2)
+                     = (key XOR key) XOR (pval1 XOR pval2) 
+                     = 0 XOR (pval1 XOR pval2)
+                     = pval1 XOR pval2
+
+
+    Ascii letters start with binary    01
+    Asci numbers and (most) punctuation start with binary 00
+
+    therefore XOR of two letters (or two nonletters) starts with binary 00
+              XOR of a letter and nonletter starts with binary 01
+
+    returns True if the two cvals are a letter and a nonletter
+    False otherwise
+
+    """
+    ## starts with binary 00 if hex byte is 0x00->0x3f
+    ## starts with binary 01 if hex byte is 0x40->0x7f
+
+    xor_val = cval1^cval2
+    #print("xor result is", xor_val)
+    if xor_val >= 0x40 and xor_val <= 0x7f:
+        return True
+    else:
+        return False
+
+
+def find_nonletters(vals):
+    """
+    vals is a list of ints (in range 0->255) representing byte values
+    known to have been encrypted with the same key
+    (or, equivalently, a list of ints representing plaintext byte values)
+
+    returns a list of ints, all the vals that correspond to nonletters
+    """
+    ## remove duplicates 
+    u_vals = list(set(vals))
+    tot = len(u_vals)          # total number of unique values we are working with
+
+    #extract unordered pairs
+    pairs = list(combinations(u_vals, 2))
+
+    ## select those that are letter-nonletter pairs
+    letter_nonletter_pairs = [(v1,v2) for (v1,v2) in pairs if is_letter_and_nonletter(v1, v2)]
+
+    ## now for each letter-nonletter pair v1,v2, we know that v1 XOR v2 starts with binary 01
+    ## so it is as if the XOR of v1 and v2 corresponds to a letter
+    ## therefore we can use is_letter_and_nonletter again to determine which member
+    ## of each pair is the nonletter.
+    nonletters = []
+
+    for (v1, v2) in letter_nonletter_pairs:
+        if v1 not in nonletters and v2 not in nonletters:
+            if is_letter_and_nonletter(v1^v2, v1):
+                nonletters.append(v1)
+            else:
+                nonletters.append(v2)
+
+    return nonletters
+
+    ## check how many letter-nonletter pairs were found:
+    ##    0: it's either all letters (or, less likely, all nonletters), cannot do anything
+    ##    1: can only happen if cvals has len=2, ie contains one letter and one nonletter
+    ##    2: one nonletter + two letters, or two letters and one nonletter (tot=3)
+    ##    3: one nonletter and three letters, or vice versa (tot=4)
+    ##    4: one nonletter and 4 letters, or vice versa, or two and two (tot=5 or 4)
+    ##    5: 5+1 or 1+5 (tot=6)
+    ##    6: 6+1, 1+6, 3+2, 2+3 (tot=7 or 5)
+    ##    7: 7+1 or 1+7 (tot=8)
+    ##    8: 8+1 or 1+8 or 2+4 or 4+2 (tot=9 or 6)
+    ##    9: 9+1 or 1+9 or 3+3 (tot=10 or 6)
+    ##    10: 10+1 or 1+10 or 2+5 or 5+2 (tot=11 or 7)
+    ##    11: 11+1 or 1+11  (tot=12)
+    ##    12: 12+1 or 1+12 or 2+6 or 6+2 or 3+4 or 4+3 (tot= 13 or 8 or 7)
+    ##
+    ##   generally speaking, if n=number of nonletters and l=number of letters
+    ##   and tot = n+l
+    ##   then letter-nonletter pairs = l*n         (the product of the two)
+    ##     ie              lnl_pairs = (tot-n)*n 
+    ##
+    ##   for any tot, for all sum pairs s1+s2=tot, a possible number of 
+    ##   lnl_pairs is s1xs2. 
+    ##       eg, if tot=7    (ie seven unique values)
+    ##       possible sum pairs are (6,1), (5,2), (4,3)
+    ##      &possible lnl_pairs =  6, 10, 12
+
+
+    # lnl_pairs = len(letter_nonletter_pairs) 
+
+    # if lnl_pairs < 2:
+    #     return None
+
+
+def extract_keybyte(cvals):
+    """
+    cvals is a list of ints (in range 0->255) representing byte values
+    known to have been encrypted with the same key
+
+    if one or more of the cvals is an encryption of a nonletter, then it may be
+    possible to extract the key (see comments in code)
+
+    returns the possible values of the keybyte if it could be extracted, otherwise
+    None
+    """
+    nonletters = find_nonletters(cvals)
+
+    if len(nonletters) == 0:
+        return None   # cannot attempt to extract keybyte
+
+    keybytes = []   #list of candidate keybytes
+    counts = []  #list of tuples, nonletters with counts
+    for nl in nonletters:
+        counts.append( (nl, cvals.count(nl)) )
+
+    counts.sort(key=lambda x: x[1], reverse=True)
+
+    print(counts)
+
+    ## if there is at least one nonletter, assume most frequent
+    ## one is a space
+    if len(counts) > 0:
+        (spaceval, n) = counts[0]
+
+    ## space is the encrypted value = ord(' ') XOR key
+    ## if we XOR it with ord(' ') again we recover the key
+    ## (n^n = 0 and k^0 = k)
+    keybyte = spaceval ^ ord(' ')
+
+    print(keybyte)
+
+
+def test_extract_keybyte(s):
+    """ s is a string
+    """
+    pvals = string_to_vals(s)
+
+    keybyte = 245
+    cvals = [pval^keybyte for pval in pvals]
+
+    extract_keybyte(cvals)
+
+
+def test_find_nonletter(s):
+    """ s is a string
+    """
+    vals = string_to_vals(s)
+
+    nonlettervals = find_nonletters(vals)
+
+    nonletterchars = [chr(v) for v in nonlettervals ]
+    print(nonletterchars)
+
+
+def test_letterpair(c1, c2):
+    """
+    c1 and c2 are two single ascii characters
+    returns True if they are a letter and a nonletter
+    False otherwise (ie if both are letters, or both are nonletters)
+    """
+    return is_letter_and_nonletter(ord(c1), ord(c2))
+
+def test():
+    strs = ["helloWorld!", "01234567890", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz", ".,!)(/&"]
+    for s in strs:
+        print(s)
+        test_helpers(s)
+
 
 ## The seven ciphertexts, representing 31-character ascii strings
 ## these were all encrypted with the same key of length 31, so that:
@@ -76,117 +360,13 @@ def xor_vals(vals1, vals2):
 
     return [vals1[i]^vals2[i] for i in range(len(vals1))]
 
-def is_letterspace_pair(cval1, cval2):
-    """
-    cval1 and cval2 are ciphertext byte values, known to have been
-    encrypted with the same key. 
-    consequently, the XOR of the cvals = the XOR of the plaintext values.
-
-    Ascii letters start with binary    01
-    Asci space char starts with binary 00
-
-    therefore XOR of two letters (or two spaces) starts with binary 00
-              XOR of a letter and space starts with binary 01
-
-
-    returns True if the two cvals are a letter and a space
-    False otherwise
-
-    """
-    ## starts with binary 00 if hex byte is 0x00->0x3f
-    ## starts with binary 01 if hex byte is 0x40->0x7f
-
-
-    xor_val = cval1^cval2
-    #print("xor result is", xor_val)
-    if xor_val >= 0x40 and xor_val <= 0x7f:
-        return True
-    else:
-        return False
-def extract_keybyte(cvals):
-    """
-    cvals is a list of ints (in range 0->255) representing byte values
-    known to have been encrypted with the same key
-
-    if one of the cvals is an encryption of a space character, then it is
-    possible to extract the key (see comments in code)
-
-    returns the value of the keybyte if it could be extracted, otherwise
-    None
-    """
-
-    ## remove duplicates
-    cvals = list(set(cvals))
-    
-    ## need at least three distinct values
-    if len(cvals)<3:
-        return None
-
-    ## compare first value v0 pairwise against all the others
-    ## note that without duplicates we have all distinct letters
-    ## plus possibly one space character
-
-    v0 = cvals[0]
-    othervals = cvals[1:]
-    letterspace_pairs = []
-    for vi in othervals:
-        if is_letterspace_pair(v0, vi):
-            letterspace_pairs.append(vi)
-    
-    ## now check how many letterspace pairs found
-    ## we only compared v0 against all the other values
-    ## so if v0 is the space, all will be letterspace pairs
-    ## if some other value vi is the space, we will find only one pair (v0,vi)
-    ## and if there are no spaces, will find no pairs
-
-    num = len(letterspace_pairs)
-    
-    if num == 0:     ## cannot extract key if no spaces 
-        return None   
-    elif num == 1:
-        space = letterspace_pairs[0] ## vi is the space, it made pair with v0
-    elif num == len(othervals):
-        space = v0   ## v0 is the space, it made a pair with all others
-    else:
-        print("unexpected letterspace_pairs count")
-        return None
-
-    ## space is the encrypted value = ord(' ') XOR key
-    ## if we XOR it with ord(' ') again we recover the key
-    ## (n^n = 0 and k^0 = k)
-    keybyte = space ^ ord(' ')
-
-
-def test():
-    
+  
 
 ### old
 from random import randint
 
 
-def string_to_vals(s):
-    """
-    s is a string of text
 
-    returns a list of ints, the ascii value of each character in s
-    """
-    vals = [ord(c) for c in s]
-    return vals
-
-def vals_to_hexstring(vals):
-    """
-    vals is a list ints, corresponding to byte values, in range 0->255
-    returns a string, the hexadecimal representation of those bytes
-    """
-    s = ""
-    for val in vals:
-        assert val >=0 and val <=255   # must represent a byte
-        hexval = hex(val)[2:]  #strip out leading '0x'
-        if len(hexval)==1:
-            hexval = '0'+ hexval  #and add leading zero if needed
-        s = s + hexval
-
-    return s
 
 def genkey(n):
     """
