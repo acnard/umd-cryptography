@@ -14,8 +14,7 @@
 #  
 
 from itertools import combinations
-import re
-from webbrowser import get
+
 
 ########################
 ###  helper functions ##
@@ -245,40 +244,51 @@ def find_nonletters(vals):
 
 def extract_keybyte(cvals):
     """
-    cvals is a list of ints (in range 0->255) representing byte values
+    cvals is a list of ints (in range 0->255) representing character values
     known to have been encrypted with the same key
 
     if one or more of the cvals is an encryption of a nonletter, then it may be
-    possible to extract the key (see comments in code)
-
-    returns the possible values of the keybyte if it could be extracted, otherwise
-    None
+    possible to extract the key (see comments in code) by assuming the 
     """
-    nonletters = find_nonletters(cvals)
+    nonletters = find_nonletters(cvals)  #get nonletter values, without repetitions
 
-    if len(nonletters) == 0:
-        return None   # cannot attempt to extract keybyte
+    ## sort nonletter values from most frequent to least frequent in cvals
+    nonletters.sort( key=lambda x:cvals.count(x), reverse=True )
 
-    keybytes = []   #list of candidate keybytes
-    counts = []  #list of tuples, nonletters with counts
-    for nl in nonletters:
-        counts.append( (nl, cvals.count(nl)) )
+    print("nonletters", nonletters)
 
-    counts.sort(key=lambda x: x[1], reverse=True)
-
-    print(counts)
-
-    ## if there is at least one nonletter, assume most frequent
-    ## one is a space
-    if len(counts) > 0:
-        (spaceval, n) = counts[0]
-
-    ## space is the encrypted value = ord(' ') XOR key
+    ##  try to extract keys based on assumption that 
+    ##  nonletter is a space, period, or comma 
+    ## eg if nonletter val is the encrypted value = ord(' ') XOR key
     ## if we XOR it with ord(' ') again we recover the key
     ## (n^n = 0 and k^0 = k)
-    keybyte = spaceval ^ ord(' ')
+    keybytes = [ ]
+    chars = [' ', '.', ',']
 
-    print(keybyte)
+    for val in nonletters: 
+        for c in chars:
+            keybyte = val ^ ord(c)
+            if keybyte not in keybytes:
+               keybytes.append( keybyte )
+
+    print("keybytes", keybytes)
+
+    ## now try all the keybytes in turn
+    ## we only want to keep the valid ones
+    valid_keybytes=keybytes[:]
+    for keybyte in keybytes:
+        print("try keybyte", keybyte, ": ", end=" ")
+        pvals = [cval^keybyte for cval in cvals]   
+        if are_printable_asciivals(pvals):
+            print(vals_to_string(pvals))
+        else:
+            print("non printable values")
+            valid_keybytes.remove(keybyte)
+
+
+    return(valid_keybytes)
+
+
 
 
 def test_extract_keybyte(s):
@@ -330,24 +340,59 @@ hexciphs= ["BB3A65F6F0034FA957F6A767699CE7FABA855AFB4F2B520AEAD612944A801E",
         "A6726DE8F01A50E849EDBC6C7C9CF2B2A88E19FD423E0647ECCB04DD4C9D1E",
         "BC7570BBBF1D46E85AF9AA6C7A9CEFA9E9825CFD5E3A0047F7CD009305A71E"]
 
-## convert each hexciph string to a list of ints
-ciphs = [hexstring_to_vals(hexciphs[i]) for i in range(len(hexciphs))]
-BYTES = 31  ## number of bytes in each ciphertext, and in the key
+KEY = [0]*31
 
-def vals_at_pos(i, intlists):
+def break_ciphs(ciphstrings = hexciphs):
     """
-    intlists is a list of equal-length lists of ints
-    i is an int representing an index position in an intlist
-    returns a list of ints, the ith value from each list
+    ciphstrings is a list of equal-length strings, where each string is the 
+    hex representation of a ciphertext, obtained by encrypting a plaintext through
+    XOR with a key as long as the plaintext. Same key used for all plaintexts.
     """
-    n = len(intlists[0])   ## number of values in each intlist
-    assert i > 0 and i < n
+    ## convert hexstrings to lists of integer values
+    ciphs =  [hexstring_to_vals(ciphstrings[i]) for i in range(len(ciphstrings))]
 
-    result = []
-    for intlist in intlists:
-        result.append(intlist[i])
+    mlen = len(ciphs[0]) 
+    print("there are", len(ciphs), "messages, each of length", mlen)
+
+    ## construct lists of values encrypted with the same key
+    ## eg the 0th value of each msg is encrypted with keybyte0,
+    ##  the 1st value of each msg is encrypted with keybyte1, etc.
+
+    for pos in range(mlen):
+        print("**** POS", pos)
+        ## get all the values at that position
+        vals = [ciph[pos] for ciph in ciphs] 
+
+        keybytes = extract_keybyte(vals)
+        if len(keybytes)>0:
+            KEY[pos] = keybytes[0]  ## just take the first value
+
+    ## Try to apply the accumulated key
+    for ciph in ciphs:
+        pvals = []
+        for i in range( mlen ):
+            if KEY[i]==0:
+                pvals.append(ord("*"))
+            else:
+                pvals.append(ciph[i] ^ KEY[i])
+        print( vals_to_string(pvals) )
+
+def apply_key(key=KEY, ciphstrings=hexciphs):
+    """
+    ciphstrings is a list of equal-length hexciphs as above
+    key is a list of ints, the multibyte key  want to try to apply
     
-    return result
+    """
+    ciphs =  [hexstring_to_vals(ciphstrings[i]) for i in range(len(ciphstrings))]
+    for ciph in ciphs:
+        pvals = []
+        for i in range( len(ciph) ):
+            if key[i]==0:
+                pvals.append(ord("*"))
+            else:
+                pvals.append(ciph[i] ^ key[i])
+        print( vals_to_string(pvals) )   
+
 
 
 
