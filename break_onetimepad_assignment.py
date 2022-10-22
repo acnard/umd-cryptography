@@ -102,18 +102,6 @@ def extract_pairs(items):
 
     return pairs
 
-def get_addends(tot):
-    """
-    tot is an int
-    returns a list of tuples, all pairs of nonzero values s1, s2 such that s1+s2=tot
-    order doesn't matter
-    eg for tot = 10 returns [(1,9), (2,8), (3,7), (4,6), (5,5)]
-
-    """
-    sums = []
-    for s1 in range(1,1+tot//2):
-        sums.append( (s1, tot-s1) )
-    return sums
 
 def test_helpers(s):
     """s is a string, to use for running the test 
@@ -182,11 +170,12 @@ def find_nonletters(vals):
     known to have been encrypted with the same key
     (or, equivalently, a list of ints representing plaintext byte values)
 
-    returns a list of ints, all the vals that correspond to nonletters
+    returns a list of ints, all the vals that correspond to presumed nonletters
+    or empty list if none could be determined
     """
     ## remove duplicates 
     u_vals = list(set(vals))
-    tot = len(u_vals)          # total number of unique values we are working with
+
 
     #extract unordered pairs
     pairs = list(combinations(u_vals, 2))
@@ -194,20 +183,29 @@ def find_nonletters(vals):
     ## select those that are letter-nonletter pairs
     letter_nonletter_pairs = [(v1,v2) for (v1,v2) in pairs if is_letter_and_nonletter(v1, v2)]
 
-    ## now for each letter-nonletter pair v1,v2, we know that v1 XOR v2 starts with binary 01
-    ## so it is as if the XOR of v1 and v2 corresponds to a letter
-    ## therefore we can use is_letter_and_nonletter again to determine which member
-    ## of each pair is the nonletter.
+    ## count occurrences of each value in letter-nonletter pairs
+    ## len(uvals)=tot, and n= number of nonletters:
+    ## each nonletter will feature in (tot-n) letter-nonletter pairs
+    ## while each letter will feature in (n) letter-nonletter pairs
+    ## 
+    ## assuming more letters than nonletters in uvals: tot-n > n, or n<tot/2:
+    ##   then each nonletter will feature in *more* than (tot/2) letter-nonletter pairs
+    ##   while each letter will feature in fewer pairs than that.
     nonletters = []
-
-    for (v1, v2) in letter_nonletter_pairs:
-        if v1 not in nonletters and v2 not in nonletters:
-            if is_letter_and_nonletter(v1^v2, v1):
-                nonletters.append(v1)
-            else:
-                nonletters.append(v2)
+    tot = len(u_vals)          
+    for v in u_vals:
+        counts=0
+        for pair in letter_nonletter_pairs:
+            if v in pair:
+                counts+=1
+        if counts > tot/2:
+            nonletters.append(v)
 
     return nonletters
+
+
+
+
 
     ## check how many letter-nonletter pairs were found:
     ##    0: it's either all letters (or, less likely, all nonletters), cannot do anything
@@ -236,10 +234,6 @@ def find_nonletters(vals):
     ##      &possible lnl_pairs =  6, 10, 12
 
 
-    # lnl_pairs = len(letter_nonletter_pairs) 
-
-    # if lnl_pairs < 2:
-    #     return None
 
 
 def extract_keybyte(cvals):
@@ -255,7 +249,7 @@ def extract_keybyte(cvals):
     ## sort nonletter values from most frequent to least frequent in cvals
     nonletters.sort( key=lambda x:cvals.count(x), reverse=True )
 
-    print("nonletters", nonletters)
+    #print("nonletters", nonletters)
 
     ##  try to extract keys based on assumption that 
     ##  nonletter is a space, period, or comma 
@@ -271,18 +265,19 @@ def extract_keybyte(cvals):
             if keybyte not in keybytes:
                keybytes.append( keybyte )
 
-    print("keybytes", keybytes)
+    #print("keybytes", keybytes)
 
     ## now try all the keybytes in turn
     ## we only want to keep the valid ones
     valid_keybytes=keybytes[:]
     for keybyte in keybytes:
-        print("try keybyte", keybyte, ": ", end=" ")
+       # print("try keybyte", keybyte, ": ", end=" ")
         pvals = [cval^keybyte for cval in cvals]   
         if are_printable_asciivals(pvals):
-            print(vals_to_string(pvals))
+           # print(vals_to_string(pvals))
+           pass
         else:
-            print("non printable values")
+           # print("non printable values")
             valid_keybytes.remove(keybyte)
 
 
@@ -341,6 +336,13 @@ hexciphs= ["BB3A65F6F0034FA957F6A767699CE7FABA855AFB4F2B520AEAD612944A801E",
         "BC7570BBBF1D46E85AF9AA6C7A9CEFA9E9825CFD5E3A0047F7CD009305A71E"]
 
 KEY = [0]*31
+# Keybyte values manually determined by inspection of break_ciphs output
+KEY[0]=242
+KEY[6] = 0x4f ^ ord('l')
+KEY[29] = 0x80 ^ ord('n')
+KEY[30] = 0x1e ^ ord('.')
+KEY[8] = 0x57 ^ ord('n')
+KEY[10] = 0xa7 ^ ord('i')
 
 def break_ciphs(ciphstrings = hexciphs):
     """
@@ -359,7 +361,7 @@ def break_ciphs(ciphstrings = hexciphs):
     ##  the 1st value of each msg is encrypted with keybyte1, etc.
 
     for pos in range(mlen):
-        print("**** POS", pos)
+        #print("**** POS", pos)
         ## get all the values at that position
         vals = [ciph[pos] for ciph in ciphs] 
 
@@ -376,6 +378,27 @@ def break_ciphs(ciphstrings = hexciphs):
             else:
                 pvals.append(ciph[i] ^ KEY[i])
         print( vals_to_string(pvals) )
+
+    """
+    here is the decryption result of breakciphs, just the automated part:
+    * am p*a*n*ng a s*cr*t missio**
+    *e is *h* *nly pe*so* to trus**
+    *he cu*r*n* plan *s *op secre**
+    *hen s*o*l* we me*t *o do thi**
+    * thin* *h*y shou*d *ollow hi**
+    *his i* *u*er tha* t*at one i**
+    *ot on* *a*et is *et*er than **
+
+    and here is the result after some manual keybytes:
+    I am planning a s*cr*t mission.
+    He is the only pe*so* to trust.
+    The current plan *s *op secret.
+    When should we me*t *o do this?
+    I think they shou*d *ollow him.
+    This is purer tha* t*at one is.
+    Not one cadet is *et*er than I.
+
+    """
 
 def apply_key(key=KEY, ciphstrings=hexciphs):
     """
