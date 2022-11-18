@@ -14,7 +14,7 @@ def gen_bytevals(n):
 def encrypt(s, k):
     """
     s is a string, the plaintext message to encrypt
-    k is a list of ints, the keybytes to use for the encryption
+    k is a list of ints, equal in length to s, the keybytes to use for the encryption
     """
     ## convert to values
     m = [ord(c) for c in s]
@@ -70,5 +70,99 @@ def test(s):
 
 
     plaintext = decrypt(ciphervals,k)
+
+    return plaintext
+
+def chunk(s, n):
+    """
+    s is a sequence (eg string or list)
+    n is an int
+    splits s into n-length chunks and returns a list 
+    of the resulting substrings or sublists 
+
+    if n>len(s) just returns s
+    if len(s) is not divisible by n, the last substring will have less
+    than n characters
+
+    """
+    chunks = [ s[i:i+n] for i in range(0, len(s), n) ]
+    return(chunks)
+
+def pkcs5_pad(s, b):
+    """
+    s is a string
+    b is an int, the block length 
+
+    pads s so that its length is a multiple of b: 
+    - uses p padding bytes of value p
+    - if s is already a multiple of b, still pads with b bytes of value b
+
+    returns the padded string
+    
+    """
+
+    p = b - len(s)%b  #number of padding characters required
+
+    pad_char = chr(p)  #value of the padding character is also p
+
+    s = s+ pad_char*p
+    return s
+
+
+def encrypt_2n(s, k):
+    """ 
+    s is a string, the  message to encrypt.
+    k is a list of ints, the keybytes to use for encryption
+
+    breaks up the message s into chunks equal to the keylength
+    and encrypts each with the 2n block cipher
+
+    returns a list of ints, the concatenated result 
+
+    """
+    b = len(k)  # get the block length 
+
+    s = pkcs5_pad(s, b)  # pads the string so len(s) is a multiple of b
+
+    chunks = chunk(s, b)   # split s into b-length chunks
+
+    #key = gen_bytevals(n)  # generate n-length key
+
+    ciphervals = []
+    for c in chunks:
+        ciphervals += encrypt(c, k)
+
+    return ciphervals
+
+def decrypt_2n(c, k):
+    """
+    c is a list of ints, the ciphertext
+    k is a list of ints, the keybytes to use for decryption
+
+    """
+    b = len(k)  # get the block length
+
+    chunks = chunk(c, 2*b) #encryption doubles the block size
+
+    s = ""
+    for c in chunks:
+        s = s+decrypt(c,k)
+
+    return s
+
+
+def test2n(s, b):
+    """
+    s is a string on which to test encryption and decryption
+    b is an int, the block size we want to use
+    """
+    ## generate key of length b
+    k = gen_bytevals(b)
+
+    ciphervals = encrypt_2n(s, k)
+    print("cipher values", ciphervals)
+
+
+    plaintext = decrypt_2n(ciphervals,k)
 
     return plaintext
